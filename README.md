@@ -22,14 +22,15 @@ repo/
 ├── k8s/app.yaml          Deployment + LoadBalancer Service
 ├── terraform/            EKS cluster (copied from the k8s course) + the CI user
 └── .github/workflows/
-    ├── build-push.yml    CI: build image, push to Docker Hub
-    ├── deploy.yml        CD: run the image on EKS
+    ├── build-push.yml    build image, push to Docker Hub
+    ├── deploy.yml        run the image on EKS
     └── undeploy.yml      remove the app from EKS
 ```
 
 You need: a GitHub repo with this code, a Docker Hub account, an AWS account,
 and on your laptop `terraform` and `aws` (and optionally `gh`). No Docker, no `kubectl`:
-your laptop only creates and destroys the cluster. Everything that touches the app runs in CI.
+your laptop only creates and destroys the cluster. Everything that touches the app runs on a
+GitHub runner, started by you with the **Run workflow** button. Nothing runs automatically.
 
 ---
 
@@ -46,7 +47,7 @@ your laptop only creates and destroys the cluster. Everything that touches the a
    gh secret set DOCKERHUB_TOKEN          # paste the token when asked
    gh variable set DOCKERHUB_USERNAME --body <dockerhub-user>
    ```
-3. Run it: **Actions → build-push → Run workflow**. (It also runs on every push to `main` that touches `app/`.)
+3. Run it: **Actions → build-push → Run workflow**.
    Open the run and look at *Set up job*: it shows the runner's OS image and machine — that's where the
    build happens, not on your laptop.
 4. Check Docker Hub: `<dockerhub-user>/hello-flask` now has `latest` and a commit tag.
@@ -105,21 +106,6 @@ Run it: **Actions → deploy → Run workflow** (tag: `latest`). Read the log:
 Two layers of permission: **IAM** decides who the runner is and which AWS calls it may make
 (only `eks:DescribeCluster`); the **EKS access entry** decides what it may do inside Kubernetes
 (edit namespace `default`, nothing else).
-
-## Part 4 – Full CI/CD
-
-Turn on automatic deploys:
-
-```bash
-gh variable set AUTO_DEPLOY --body true      # or add it in the Variables tab
-```
-
-Now change the message in `app/app.py`, commit, push to `main`:
-`build-push` runs → when it succeeds, `deploy` runs → reload the app URL, see the new `version`.
-
-```bash
-git commit -am "new message" && git push
-```
 
 ---
 

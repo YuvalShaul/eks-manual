@@ -1,4 +1,4 @@
-# CD: run the image on EKS.
+# Run the image on EKS. Run by hand: Actions > deploy > Run workflow.
 #
 # Needs (Settings > Secrets and variables > Actions):
 #   secret   AWS_ACCESS_KEY_ID      - from: terraform output github_ci_access_key_id
@@ -6,7 +6,6 @@
 #   variable DOCKERHUB_USERNAME     - same as build-push
 #   variable AWS_REGION             - optional, default us-west-2
 #   variable EKS_CLUSTER            - optional, default learn-eks
-#   variable AUTO_DEPLOY = true     - optional: deploy automatically after every successful build-push
 name: deploy
 
 on:
@@ -15,23 +14,16 @@ on:
       tag:
         description: "Image tag to deploy"
         default: latest
-  workflow_run:
-    workflows: [build-push]
-    types: [completed]
 
 jobs:
   deploy:
-    # Manual runs always; automatic runs only if the build succeeded and AUTO_DEPLOY is on.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && vars.AUTO_DEPLOY == 'true')
     runs-on: ubuntu-latest
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
       EKS_CLUSTER: ${{ vars.EKS_CLUSTER || 'learn-eks' }}
-      IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/hello-flask:${{ inputs.tag || 'latest' }}
+      IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/hello-flask:${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v7
 

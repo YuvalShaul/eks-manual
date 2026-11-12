@@ -1,4 +1,4 @@
-# CI: build the Flask image and push it to Docker Hub.
+# Build the Flask image and push it to Docker Hub. Run by hand: Actions > build-push > Run workflow.
 #
 # Needs (Settings > Secrets and variables > Actions):
 #   variable DOCKERHUB_USERNAME  - your Docker Hub user (not secret)
@@ -6,9 +6,6 @@
 name: build-push
 
 on:
-  push:
-    branches: [main]
-    paths: ["app/**", ".github/workflows/build-push.yml"]
   workflow_dispatch: # the "Run workflow" button
 
 jobs:
