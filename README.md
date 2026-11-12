@@ -23,11 +23,13 @@ repo/
 ├── terraform/            EKS cluster (copied from the k8s course) + the CI user
 └── .github/workflows/
     ├── build-push.yml    CI: build image, push to Docker Hub
-    └── deploy.yml        CD: run the image on EKS
+    ├── deploy.yml        CD: run the image on EKS
+    └── undeploy.yml      remove the app from EKS
 ```
 
 You need: a GitHub repo with this code, a Docker Hub account, an AWS account,
-and on your laptop `terraform`, `aws`, `kubectl` (and optionally `gh`). No Docker needed.
+and on your laptop `terraform` and `aws` (and optionally `gh`). No Docker, no `kubectl`:
+your laptop only creates and destroys the cluster. Everything that touches the app runs in CI.
 
 ---
 
@@ -72,51 +74,7 @@ terraform apply -var-file=terraform.tfvars                 # ~15-20 minutes
 - AWS permission: only `eks:DescribeCluster` on this cluster
 - Kubernetes permission (EKS access entry): `AmazonEKSEditPolicy`, **only in namespace `default`**
 
-Check you (the creator) can use the cluster:
-
-```bash
-aws eks update-kubeconfig --name learn-eks --region us-west-2
-kubectl get nodes
-```
-
-## Part 3 – Deploy by hand, as you
-
-```bash
-cd ..   # repo root
-sed "s|IMAGE|<dockerhub-user>/hello-flask:latest|" k8s/app.yaml | kubectl apply -f -
-kubectl get pods
-kubectl get svc hello-flask     # EXTERNAL-IP is the load balancer's DNS name
-curl http://<that-hostname>     # may take 1-2 minutes to resolve
-```
-
-Refresh a few times: `pod` changes — two replicas behind one load balancer.
-
-## Part 4 – Deploy by hand, as the CI user
-
-Before giving the CI key to GitHub, *be* the CI user for a minute:
-
-```bash
-cd terraform
-export AWS_ACCESS_KEY_ID=$(terraform output -raw github_ci_access_key_id)
-export AWS_SECRET_ACCESS_KEY=$(terraform output -raw github_ci_secret_access_key)
-aws sts get-caller-identity                       # ...:user/learn-eks-github-ci
-aws eks update-kubeconfig --name learn-eks --region us-west-2 --kubeconfig /tmp/ci-kubeconfig
-export KUBECONFIG=/tmp/ci-kubeconfig
-
-kubectl auth whoami
-kubectl get pods                                  # allowed (namespace default)
-kubectl get pods -n kube-system                   # Forbidden
-kubectl get nodes                                 # Forbidden
-kubectl auth can-i --list                         # everything it may do
-aws eks list-clusters                             # AccessDenied - only DescribeCluster was granted
-
-unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY KUBECONFIG   # back to being you
-```
-
-Two layers of permission: **IAM** decides who you are and what AWS API calls you may make;
-the **EKS access entry** decides what you may do inside Kubernetes.
-
-## Part 5 – Deploy from GitHub Actions
+## Part 3 – Deploy from GitHub Actions
 
 Put the CI user's key into GitHub secrets:
 
@@ -139,11 +97,16 @@ gh variable set EKS_CLUSTER --body learn-eks
 ```
 
 Run it: **Actions → deploy → Run workflow** (tag: `latest`). Read the log:
-- *Who does AWS think we are?* → the CI user
+- *Who does AWS think we are?* → `user/learn-eks-github-ci`, not you
 - *What may we do?* → yes in `default`, no in `kube-system`, no nodes
-- the **job summary** shows the app URL.
+- the **job summary** shows the app URL. Open it (DNS may take 1-2 minutes the first time) and
+  refresh a few times: `pod` changes — two replicas behind one load balancer.
 
-## Part 6 – Full CI/CD
+Two layers of permission: **IAM** decides who the runner is and which AWS calls it may make
+(only `eks:DescribeCluster`); the **EKS access entry** decides what it may do inside Kubernetes
+(edit namespace `default`, nothing else).
+
+## Part 4 – Full CI/CD
 
 Turn on automatic deploys:
 
@@ -152,7 +115,7 @@ gh variable set AUTO_DEPLOY --body true      # or add it in the Variables tab
 ```
 
 Now change the message in `app/app.py`, commit, push to `main`:
-`build-push` runs → when it succeeds, `deploy` runs → curl the URL, see the new `version`.
+`build-push` runs → when it succeeds, `deploy` runs → reload the app URL, see the new `version`.
 
 ```bash
 git commit -am "new message" && git push
@@ -162,10 +125,11 @@ git commit -am "new message" && git push
 
 ## Clean up (important – this costs money: EKS, NAT gateway, EC2, load balancer)
 
-Delete the Service first, so AWS removes the load balancer (otherwise it blocks deleting the VPC):
+1. **Actions → undeploy → Run workflow.** This deletes the app and its load balancer
+   (a leftover load balancer blocks deleting the VPC).
+2. Then, from your laptop:
 
 ```bash
-kubectl delete -f k8s/app.yaml
 cd terraform
 terraform destroy -var-file=terraform.tfvars
 ```
