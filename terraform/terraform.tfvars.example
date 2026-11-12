@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars and edit.  (cp terraform.tfvars.example terraform.tfvars)
+
+region       = "us-west-2"
+cluster_name = "learn-eks"
+
+# Optional: other IAM users/roles that should be cluster admins (you, the creator, already are).
+admin_users = []

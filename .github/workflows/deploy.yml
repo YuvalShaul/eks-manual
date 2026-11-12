@@ -1,0 +1,62 @@
+# CD: run the image on EKS.
+#
+# Needs (Settings > Secrets and variables > Actions):
+#   secret   AWS_ACCESS_KEY_ID      - from: terraform output github_ci_access_key_id
+#   secret   AWS_SECRET_ACCESS_KEY  - from: terraform output -raw github_ci_secret_access_key
+#   variable DOCKERHUB_USERNAME     - same as build-push
+#   variable AWS_REGION             - optional, default us-west-2
+#   variable EKS_CLUSTER            - optional, default learn-eks
+#   variable AUTO_DEPLOY = true     - optional: deploy automatically after every successful build-push
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to deploy"
+        default: latest
+  workflow_run:
+    workflows: [build-push]
+    types: [completed]
+
+jobs:
+  deploy:
+    # Manual runs always; automatic runs only if the build succeeded and AUTO_DEPLOY is on.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && vars.AUTO_DEPLOY == 'true')
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+      EKS_CLUSTER: ${{ vars.EKS_CLUSTER || 'learn-eks' }}
+      IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/hello-flask:${{ inputs.tag || 'latest' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Who does AWS think we are?
+        run: aws sts get-caller-identity
+
+      - name: Get a kubeconfig for the cluster
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+
+      - name: Who does Kubernetes think we are, and what may we do?
+        run: |
+          kubectl auth whoami
+          echo "create deployments in default: $(kubectl auth can-i create deployments -n default)"
+          echo "create deployments in kube-system: $(kubectl auth can-i create deployments -n kube-system || true)"
+          echo "list nodes: $(kubectl auth can-i list nodes || true)"
+
+      - name: Deploy
+        run: |
+          echo "Deploying $IMAGE"
+          sed "s|IMAGE|$IMAGE|" k8s/app.yaml | kubectl apply -f -
+          kubectl rollout restart deployment/hello-flask   # pull "latest" again
+          kubectl rollout status deployment/hello-flask --timeout=180s
+
+      - name: Where is it?
+        run: |
+          kubectl get pods -l app=hello-flask -o wide
+          HOST=$(kubectl get svc hello-flask -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "App URL: http://$HOST  (DNS may take a minute or two the first time)" | tee -a "$GITHUB_STEP_SUMMARY"
