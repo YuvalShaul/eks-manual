@@ -1,8 +1,8 @@
 # Run the image on EKS. Run by hand: Actions > deploy > Run workflow.
 #
 # Needs (Settings > Secrets and variables > Actions):
-#   secret   AWS_ACCESS_KEY_ID      - from: terraform output github_ci_access_key_id
-#   secret   AWS_SECRET_ACCESS_KEY  - from: terraform output -raw github_ci_secret_access_key
+#   secret   AWS_ACCESS_KEY_ID      - access key of the IAM user "github-ci" (created by hand)
+#   secret   AWS_SECRET_ACCESS_KEY  - its secret access key
 #   variable DOCKERHUB_USERNAME     - same as build-push
 #   variable AWS_REGION             - optional, default us-west-2
 #   variable EKS_CLUSTER            - optional, default learn-eks

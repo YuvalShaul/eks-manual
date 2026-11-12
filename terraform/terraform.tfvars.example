@@ -5,3 +5,6 @@ cluster_name = "learn-eks"
 
 # Optional: other IAM users/roles that should be cluster admins (you, the creator, already are).
 admin_users = []
+
+# The IAM user you created by hand for GitHub Actions (README, Part 2).
+github_ci_user = "github-ci"
