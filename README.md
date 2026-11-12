@@ -2,13 +2,18 @@
 
 A tiny Flask app, built by GitHub Actions, pushed to Docker Hub, and run on EKS.
 
+**The image is never built on your laptop.** No `docker build`, no `docker login`, no Docker Hub
+password on your machine. A GitHub Actions *runner* — a fresh virtual machine on GitHub's servers,
+created for each run and thrown away after — checks out the code, builds the image, and pushes it
+using credentials it gets only from the repo's secrets.
+
 The point is to see **who is allowed to do what, and where the credentials live**:
 
 | Action | Who does it | Credential | Where it is kept |
 |---|---|---|---|
-| Push image to Docker Hub | GitHub Actions | Docker Hub access token | GitHub secret `DOCKERHUB_TOKEN` |
-| Talk to AWS (find the cluster) | GitHub Actions | IAM user `learn-eks-github-ci` access key | GitHub secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
-| Deploy into Kubernetes | GitHub Actions | the same IAM user, mapped by an EKS access entry | the cluster (Terraform created the mapping) |
+| Build image, push to Docker Hub | GitHub Actions runner (a fresh VM on GitHub's servers) | Docker Hub access token | GitHub secret `DOCKERHUB_TOKEN` |
+| Talk to AWS (find the cluster) | GitHub Actions runner (a fresh VM on GitHub's servers) | IAM user `learn-eks-github-ci` access key | GitHub secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
+| Deploy into Kubernetes | GitHub Actions runner (a fresh VM on GitHub's servers) | the same IAM user, mapped by an EKS access entry | the cluster (Terraform created the mapping) |
 | Create/destroy the cluster | You | your own AWS credentials | your laptop (`aws configure`) |
 
 ```
@@ -22,31 +27,11 @@ repo/
 ```
 
 You need: a GitHub repo with this code, a Docker Hub account, an AWS account,
-and on your laptop `docker`, `terraform`, `aws`, `kubectl` (and optionally `gh`).
+and on your laptop `terraform`, `aws`, `kubectl` (and optionally `gh`). No Docker needed.
 
 ---
 
-## Part 1 – The app, by hand
-
-```bash
-cd app
-docker build -t hello-flask .
-docker run --rm -p 5000:5000 hello-flask
-curl localhost:5000        # {"message": "Hello from EKS!", "pod": "...", "version": "dev"}
-```
-
-Push it to Docker Hub yourself, with **your** login:
-
-```bash
-docker login                                   # your Docker Hub user + password/token
-docker tag hello-flask <dockerhub-user>/hello-flask:manual
-docker push <dockerhub-user>/hello-flask:manual
-```
-
-That worked because *your laptop* holds your Docker Hub credentials (`~/.docker/config.json`).
-GitHub's runners don't have them — so we hand them over as secrets.
-
-## Part 2 – Docker Hub from GitHub Actions
+## Part 1 – Docker Hub from GitHub Actions
 
 1. Docker Hub → **Account settings → Personal access tokens → Generate new token**,
    permission **Read & Write**. Copy it (it is shown once).
@@ -60,6 +45,8 @@ GitHub's runners don't have them — so we hand them over as secrets.
    gh variable set DOCKERHUB_USERNAME --body <dockerhub-user>
    ```
 3. Run it: **Actions → build-push → Run workflow**. (It also runs on every push to `main` that touches `app/`.)
+   Open the run and look at *Set up job*: it shows the runner's OS image and machine — that's where the
+   build happens, not on your laptop.
 4. Check Docker Hub: `<dockerhub-user>/hello-flask` now has `latest` and a commit tag.
 
 Things to notice:
@@ -68,7 +55,7 @@ Things to notice:
   every image name in the log would be masked too.
 - Try it broken: delete the `DOCKERHUB_TOKEN` secret and re-run → the login step fails.
 
-## Part 3 – Create the cluster (by hand, from your laptop)
+## Part 2 – Create the cluster (by hand, from your laptop)
 
 ```bash
 aws sts get-caller-identity     # make sure these are YOUR admin credentials
@@ -92,7 +79,7 @@ aws eks update-kubeconfig --name learn-eks --region us-west-2
 kubectl get nodes
 ```
 
-## Part 4 – Deploy by hand, as you
+## Part 3 – Deploy by hand, as you
 
 ```bash
 cd ..   # repo root
@@ -104,7 +91,7 @@ curl http://<that-hostname>     # may take 1-2 minutes to resolve
 
 Refresh a few times: `pod` changes — two replicas behind one load balancer.
 
-## Part 5 – Deploy by hand, as the CI user
+## Part 4 – Deploy by hand, as the CI user
 
 Before giving the CI key to GitHub, *be* the CI user for a minute:
 
@@ -129,7 +116,7 @@ unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY KUBECONFIG   # back to being you
 Two layers of permission: **IAM** decides who you are and what AWS API calls you may make;
 the **EKS access entry** decides what you may do inside Kubernetes.
 
-## Part 6 – Deploy from GitHub Actions
+## Part 5 – Deploy from GitHub Actions
 
 Put the CI user's key into GitHub secrets:
 
@@ -156,7 +143,7 @@ Run it: **Actions → deploy → Run workflow** (tag: `latest`). Read the log:
 - *What may we do?* → yes in `default`, no in `kube-system`, no nodes
 - the **job summary** shows the app URL.
 
-## Part 7 – Full CI/CD
+## Part 6 – Full CI/CD
 
 Turn on automatic deploys:
 
